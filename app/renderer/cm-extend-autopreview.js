@@ -8,7 +8,8 @@
 
 var path = require("path"),
     isUrl = require("is-url"),
-    parsePath = require("parse-filepath");
+    parsePath = require("parse-filepath"),
+    querystring = require("querystring")
 
 function autopreview (cm, line, types) {
 
@@ -63,6 +64,75 @@ function autopreview (cm, line, types) {
 
     var doc = cm.doc,
         config = {
+            scripture: {
+
+                regex: /\[\$([^\]]+)\]/g,
+                createElement: function (match) {
+                    const [text, subs] = match[1].split('$')
+                    const key = 'scripture:' + text;
+                    const current = localStorage.getItem(key)
+                    if (current) {
+                        const parsed = JSON.parse(current)
+                        let passage = parsed.passages[0].trim()
+                        if (subs) {
+                            for (const [key, value] of Object.entries(JSON.parse(subs))) {
+                                passage = passage.split(key).join(key + " (" + value + ")")
+                            }
+                        }
+                        var $element = $("<div class='scripture autopreview-scripture'><i class='fa fa-book'>" + passage + " (" + parsed.canonical +")</i></span>");
+                        return $element.get(0);
+                    } else {
+                    
+                    const promise = fetch("https://api.esv.org/v3/passage/text?" + querystring.stringify({
+                            'q' : text,
+                            'include-passage-references': false,
+                            'include-verse-numbers': false,
+                            'include-footnotes': false,
+                            'include-headings': false,
+                            'include-short-copyright': false
+                        }), {
+                        headers: {
+                            "Authorization": "Token 432beb70002166e65d47ef2f778f6d16894a61df",
+                        }}).then(function(response) {
+                            return response.json()
+                        }).then(function(response) {
+                            localStorage.setItem(key, JSON.stringify(response))
+                            return [key, subs]
+                        })
+
+                    
+                    var $element = $("<div class='scripture autopreview-scripture'><i class='fa fa-book'>Loading</i></span>");
+                    const result = $element.get(0);
+                    result._promise = promise;
+                        return result
+                    }
+                },
+                marker: {
+                    clearOnEnter: true,
+                    handleMouseEvents: true,
+                    inclusiveLeft: true,
+                    inclusiveRight: true
+                },
+                callback: function(textMarker, element) {
+                    console.log(1)
+                    if (element._promise) {
+                        console.log(2)
+                        element._promise.then(function([key, subs]) {
+                            const current = localStorage.getItem(key)
+                         const parsed = JSON.parse(current)
+                        let passage = parsed.passages[0].trim()
+                        if (subs) {
+                            for (const [key, value] of Object.entries(JSON.parse(subs))) {
+                                passage = passage.split(key).join(key + " (" + value + ")")
+                            }
+                        }
+                        $(element).replaceWith("<div class='scripture autopreview-scripture'><i class='fa fa-book'>" + passage + " (" + parsed.canonical +")</i></span>");
+                            console.log(3)
+                            textMarker.changed();
+                        })
+                    }
+                }
+            },
             image: {
                 regex: /!\[(.*)\]\((.+\.(jpg|jpeg|png|gif|svg))(\s("|')(.*)("|')\s?)?\)/gi,
                 createElement: function (match) {
@@ -248,7 +318,8 @@ function autopreview (cm, line, types) {
                         }
                     });
                 }
-            }
+            },
+
         };
     if (types === undefined || types.length === 0) {
         return;
